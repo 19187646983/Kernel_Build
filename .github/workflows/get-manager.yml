@@ -394,21 +394,68 @@ jobs:
           done
 
           if [ -z "$DOWNLOAD_LIST" ]; then
-            echo "未获取到 KSU 版本小于等于 $TARGET_KSU_VERSION 的 Manager artifact 下载地址列表。"
-            exit 1
-          fi
-          echo "选择 Manager 构建 $BEST_BUILD_ID ($BEST_BRANCH), KSU $BEST_VERSION"
+            echo "未通过 CI 翻页找到 KSU ≤ $TARGET_KSU_VERSION 的管理器。"
 
-          # 下载并解压所有 Manager 产物
-          echo "$DOWNLOAD_LIST" | while IFS=$'\t' read -r NAME URL; do
-            SAFE_NAME=$(echo "$NAME" | tr '/ ' '__')
-            ZIP_NAME="${{ inputs.kernelsu_variant }}-${SAFE_NAME}(${{ env.KSU_VERSION }}).zip"
-            echo "下载 $NAME -> $ZIP_NAME"
-            curl -L -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" -o "$ZIP_NAME" "$URL"
-            mkdir -p "manager-artifacts/$SAFE_NAME"
-            unzip -o "$ZIP_NAME" -d "manager-artifacts/$SAFE_NAME"
-            rm -rf "$ZIP_NAME"
-          done
+            # ========== ReSukiSU(34965) 专属 Fallback ==========
+            # 说明：ReSukiSU 仓库 build-manager.yml 没有任何成功的 CI runs，所以 CI 翻页永远拿不到。
+            # 退而求其次：从官方 Release v4.2.0-rc1 (KSU=35061) 下载全分支管理器合集打包给用户。
+            # 35061 和 34965 版本接近，通常可以兼容工作（KPM 也可使用）。
+            if [ "${{ inputs.kernelsu_variant }}" == "ReSukiSU(34965)" ]; then
+              echo "ReSukiSU(34965): 从 Release v4.2.0-rc1 (KSU 35061) 下载多分支管理器合集作为 fallback..."
+              mkdir -p "manager-artifacts/Manager-release"
+              mkdir -p "manager-artifacts/Manager-debug"
+              mkdir -p "manager-artifacts/Spoofed-Manager-release"
+
+              RELEASE_API="https://api.github.com/repos/ReSukiSU/ReSukiSU/releases/tags/v4.2.0-rc1"
+              ASSETS_JSON=$(curl -s "$RELEASE_API")
+              echo "$ASSETS_JSON" | jq -r '.assets[] | "\(.name)\t\(.browser_download_url)"' | while IFS=$'\t' read -r ASSET_NAME ASSET_URL; do
+                case "$ASSET_NAME" in
+                  *-arm64-v8a-release.apk)
+                    echo "  下载 arm64-v8a release: $ASSET_NAME"
+                    curl -fL -o "manager-artifacts/Manager-release/$ASSET_NAME" "$ASSET_URL" 2>/dev/null || true
+                    cp "manager-artifacts/Manager-release/$ASSET_NAME" "manager-artifacts/Spoofed-Manager-release/Spoofed-$ASSET_NAME" 2>/dev/null || true
+                    ;;
+                  *-armeabi-v7a-release.apk)
+                    echo "  下载 armeabi-v7a release: $ASSET_NAME"
+                    curl -fL -o "manager-artifacts/Manager-release/$ASSET_NAME" "$ASSET_URL" 2>/dev/null || true
+                    ;;
+                  *-x86_64-release.apk)
+                    echo "  下载 x86_64 release: $ASSET_NAME"
+                    curl -fL -o "manager-artifacts/Manager-release/$ASSET_NAME" "$ASSET_URL" 2>/dev/null || true
+                    ;;
+                  *-universal-release.apk)
+                    echo "  下载 universal release: $ASSET_NAME"
+                    curl -fL -o "manager-artifacts/Manager-release/$ASSET_NAME" "$ASSET_URL" 2>/dev/null || true
+                    ;;
+                  *-debug.apk)
+                    echo "  下载 debug 版: $ASSET_NAME"
+                    curl -fL -o "manager-artifacts/Manager-debug/$ASSET_NAME" "$ASSET_URL" 2>/dev/null || true
+                    ;;
+                esac
+              done
+              APK_COUNT=$(find manager-artifacts -type f -name "*.apk" 2>/dev/null | wc -l || echo 0)
+              if [ "$APK_COUNT" -gt 0 ]; then
+                echo "ReSukiSU(34965): Release fallback 成功下载 $APK_COUNT 个管理器 APK 多分支合集"
+              else
+                echo "警告: ReSukiSU(34965) Release fallback 也没下载到任何 APK"
+              fi
+            else
+              echo "未获取到 KSU 版本小于等于 $TARGET_KSU_VERSION 的 Manager artifact 下载地址列表。"
+              exit 1
+            fi
+          else
+            echo "选择 Manager 构建 $BEST_BUILD_ID ($BEST_BRANCH), KSU $BEST_VERSION"
+            # 下载并解压所有 Manager 产物
+            echo "$DOWNLOAD_LIST" | while IFS=$'\t' read -r NAME URL; do
+              SAFE_NAME=$(echo "$NAME" | tr '/ ' '__')
+              ZIP_NAME="${{ inputs.kernelsu_variant }}-${SAFE_NAME}(${{ env.KSU_VERSION }}).zip"
+              echo "下载 $NAME -> $ZIP_NAME"
+              curl -L -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" -o "$ZIP_NAME" "$URL"
+              mkdir -p "manager-artifacts/$SAFE_NAME"
+              unzip -o "$ZIP_NAME" -d "manager-artifacts/$SAFE_NAME" 2>/dev/null || true
+              rm -rf "$ZIP_NAME"
+            done
+          fi
 
           if [ "${{ inputs.kernelsu_variant }}" == "ReSukiSU(34965)" ]; then
             echo "ReSukiSU(34965): 保留多分支管理器合集（arm64-v8a / armeabi-v7a / x86_64 / universal / debug / Spoofed）..."
