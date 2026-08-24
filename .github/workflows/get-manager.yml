@@ -228,13 +228,13 @@ jobs:
                 exit 1
               fi
 
-              # 优先稳定版，找不到再用最新预发布
-              RELEASE_INFO=$(printf '%s' "$RELEASES_DATA" | jq '
-                [ .[] | select(.prerelease == false) ]
-                | if length > 0 then .[0]
-                  else ([ .[] | select(.draft == false) ][0]) end
-              ')
-              REL_TAG=$(printf '%s' "$RELEASE_INFO" | jq -r '.tag_name')
+              # 优先取最新一个非 draft release（prerelease 也接受），避免无稳定版时 jq 取空
+              RELEASE_INFO=$(printf '%s' "$RELEASES_DATA" | jq '[ .[] | select(.draft == false) ] | .[0]')
+              REL_TAG=$(printf '%s' "$RELEASE_INFO" | jq -r '.tag_name // empty')
+              if [ -z "$REL_TAG" ] || [ "$REL_TAG" = "null" ]; then
+                echo "错误: 未能从 ReSukiSU Releases 中选出版本（数据: ${RELEASES_DATA:0:200}）"
+                exit 1
+              fi
               echo "选用 Release: $REL_TAG"
 
               printf '%s' "$RELEASE_INFO" | jq -r '.assets[]? | select(.name | endswith(".apk")) | "\(.name)\t\(.browser_download_url)"' | \
