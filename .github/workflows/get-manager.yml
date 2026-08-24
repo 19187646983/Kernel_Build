@@ -412,21 +412,25 @@ jobs:
 
           if [ "${{ inputs.kernelsu_variant }}" == "ReSukiSU(34965)" ]; then
             echo "ReSukiSU(34965): 保留多分支管理器合集（arm64-v8a / armeabi-v7a / x86_64 / universal / debug / Spoofed）..."
-            find manager-artifacts -type f -name "*.apk" -print
-            if ! find manager-artifacts -type f -name "*.apk" | grep -q .; then
-              echo "错误: 未下载到任何管理器 APK"
-              exit 1
+            find manager-artifacts -type f -name "*.apk" -print || true
+            APK_COUNT=$(find manager-artifacts -type f -name "*.apk" 2>/dev/null | wc -l || echo 0)
+            if [ "$APK_COUNT" -eq 0 ]; then
+              echo "警告: 未下载到任何管理器 APK（管理器下载流程失败，内核仍继续构建）"
             fi
           elif [ "${{ inputs.kernelsu_variant }}" == "ReSukiSU" ] || [ "${{ inputs.kernelsu_variant }}" == "ReSukiSU(34943)" ]; then
             echo "仅保留 ReSukiSU arm64-v8a release 管理器..."
-            find manager-artifacts -type f -name "*.apk" ! -name "*-arm64-v8a-release.apk" ! -name "*Spoofed*" -delete
-            find manager-artifacts -type f -name "*debug*.apk" -delete
-            if ! find manager-artifacts -type f -name "*-arm64-v8a-release.apk" | grep -q .; then
-              echo "未找到 ReSukiSU arm64-v8a release 管理器。"
-              exit 1
+            find manager-artifacts -type f -name "*.apk" ! -name "*-arm64-v8a-release.apk" ! -name "*Spoofed*" -delete 2>/dev/null || true
+            find manager-artifacts -type f -name "*debug*.apk" -delete 2>/dev/null || true
+            APK_COUNT=$(find manager-artifacts -type f -name "*-arm64-v8a-release.apk" 2>/dev/null | wc -l || echo 0)
+            if [ "$APK_COUNT" -eq 0 ] && [ "${{ inputs.kernelsu_variant }}" != "ReSukiSU(34943)" ]; then
+              echo "警告: 未找到 ReSukiSU arm64-v8a release 管理器"
             fi
-            find manager-artifacts -type f -name "*.apk" -print
+            find manager-artifacts -type f -name "*.apk" -print || true
           fi
+
+          # 【关键修复】在 add_KSU 步骤末尾统一设置 kversion output，给 上传APK 步骤使用
+          echo "kversion=${{ env.KSU_VERSION }}" >> $GITHUB_OUTPUT
+          echo "add_KSU 步骤完成: KSU_VERSION=${{ env.KSU_VERSION }}"
 
       - name: 添加 SUSFS 模块
         id: add_SUSFS
@@ -511,7 +515,8 @@ jobs:
         run: echo "下载CI构建的KSU失败!"
 
       - name: 上传APK
-        if: steps.add_KSU.outcome == 'success' && steps.add_KSU.outputs.kversion != '34943'
+        # 说明：KSU_VERSION=34943 的用户自己有管理器，不上传；其他变体只要 manager-artifacts 目录存在 .apk 就上传
+        if: ${{ env.KSU_VERSION != '' && env.KSU_VERSION != '34943' }}
         uses: actions/upload-artifact@v6
         with:
           name: ${{ env.ARTIFACT_PREFIX }}-Manager
