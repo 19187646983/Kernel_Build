@@ -218,59 +218,7 @@ jobs:
               ;;
             "SukiSU(40548)") LEGACY_RELEASE_TAG="v2.0.0-r34"; LEGACY_DIR="SukiSU_40548" ;;
             "ReSukiSU(34943)")
-              echo "ReSukiSU(34943): 从 GitHub Releases 下载最新 ReSukiSU 多变体管理器..."
-              mkdir -p manager-artifacts
-
-              RELEASES_DATA=$(curl -fsSL -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
-                "https://api.github.com/repos/ReSukiSU/ReSukiSU/releases")
-              if [ -z "$RELEASES_DATA" ]; then
-                echo "错误: 无法获取 ReSukiSU Releases 列表"
-                exit 1
-              fi
-
-              # 优先取最新一个非 draft release（prerelease 也接受），避免无稳定版时 jq 取空
-              RELEASE_INFO=$(printf '%s' "$RELEASES_DATA" | jq '[ .[] | select(.draft == false) ] | .[0]')
-              REL_TAG=$(printf '%s' "$RELEASE_INFO" | jq -r '.tag_name // empty')
-              if [ -z "$REL_TAG" ] || [ "$REL_TAG" = "null" ]; then
-                echo "错误: 未能从 ReSukiSU Releases 中选出版本（数据: ${RELEASES_DATA:0:200}）"
-                exit 1
-              fi
-              echo "选用 Release: $REL_TAG"
-
-              printf '%s' "$RELEASE_INFO" | jq -r '.assets[]? | select(.name | endswith(".apk")) | "\(.name)\t\(.browser_download_url)"' | \
-              while IFS=$'\t' read -r APK_NAME APK_URL; do
-                [ -z "$APK_NAME" ] && continue
-                # 根据文件名归类到不同子目录，形成多分支结构
-                case "$APK_NAME" in
-                  *-arm64-v8a-release*)  SUBDIR="ReSukiSU_Manager-arm64-v8a-release" ;;
-                  *-armeabi-v7a-release*) SUBDIR="ReSukiSU_Manager-armeabi-v7a-release" ;;
-                  *-x86_64-release*)     SUBDIR="ReSukiSU_Manager-x86_64-release" ;;
-                  *-universal-release*)  SUBDIR="ReSukiSU_Manager-universal-release" ;;
-                  *-release*)            SUBDIR="ReSukiSU_Manager-release" ;;
-                  *-debug*)              SUBDIR="ReSukiSU_Manager-debug" ;;
-                  *)                     SUBDIR="ReSukiSU_Manager-other" ;;
-                esac
-                mkdir -p "manager-artifacts/$SUBDIR"
-                echo "  下载 $APK_NAME  -> $SUBDIR/"
-                curl -fL -o "manager-artifacts/$SUBDIR/$APK_NAME" "$APK_URL" || continue
-
-                # 对 arm64-v8a release 复制一份作为 Spoofed 变体（与 SukiSU(40726) 行为一致）
-                if [[ "$APK_NAME" == *-arm64-v8a-release* ]]; then
-                  mkdir -p "manager-artifacts/ReSukiSU_Spoofed-Manager-release"
-                  cp "manager-artifacts/$SUBDIR/$APK_NAME" \
-                     "manager-artifacts/ReSukiSU_Spoofed-Manager-release/Spoofed-$APK_NAME"
-                  echo "  生成 Spoofed 变体: Spoofed-$APK_NAME"
-                fi
-              done
-
-              # 验证：至少 arm64-v8a release 存在
-              if ! find manager-artifacts -type f -name "*.apk" | grep -q .; then
-                echo "错误: 未能下载任何 ReSukiSU 管理器 APK"
-                exit 1
-              fi
-              echo "多变体管理器下载完成:"
-              find manager-artifacts -type f -name "*.apk" -print
-
+              echo "ReSukiSU(34943): 跳过管理器下载（内核版本 34943 过低，无匹配的官方管理器版本；用户自行提供管理器 APK）"
               echo "kversion=34943" >> $GITHUB_OUTPUT
               exit 0
               ;;
@@ -520,7 +468,7 @@ jobs:
         run: echo "下载CI构建的KSU失败!"
 
       - name: 上传APK
-        if: steps.add_KSU.outcome == 'success'
+        if: steps.add_KSU.outcome == 'success' && steps.add_KSU.outputs.kversion != '34943'
         uses: actions/upload-artifact@v6
         with:
           name: ${{ env.ARTIFACT_PREFIX }}-Manager
