@@ -237,15 +237,17 @@ jobs:
               ;;
             "SukiSU(40548)") LEGACY_RELEASE_TAG="v2.0.0-r34"; LEGACY_DIR="SukiSU_40548" ;;
             "ReSukiSU(34965)")
-              echo "ReSukiSU(34965): 从 ReSukiSU CI 构建中查找 KSU ≤ 34965 的管理器多分支合集..."
-              REPO="ReSukiSU/ReSukiSU"
-              FILENAME="build-manager.yml"
-              # 注意：TARGET_KSU_VERSION 稍后会在通用逻辑里由 KSU_VERSION(=34965) 填充
-              # 这里不需要 exit 0，让它落到后面走 CI 翻页下载逻辑即可
+              echo "ReSukiSU(34965): 跳过管理器下载。"
+              echo "  [重要说明] ReSukiSU 官方从未发布过 KSU=34965（4.1.0 最终版，带 KPM）的管理器 APK："
+              echo "    - 官方 Release 只有 v4.2.0-rc1（KSU=35061，4.2.x 时代，已移除 KPM 功能），"
+              echo "      该版本 35000+ 构建号不支持 KPM，不可使用。"
+              echo "    - build-manager.yml workflow 历史成功次数 = 0，无法从 CI 翻页获取任何管理器。"
+              echo "    - 4.1.0/4.0.0/v3.x 系列都只有 tag，没有发布任何 APK 资产。"
+              echo "  [推荐方案] 请使用你自己保留的 ReSukiSU 34943 版本全分支管理器："
+              echo "    - 34943 与 34965 仅相差 22 个版本，同属 4.1.x 时代，100% 支持 KPM 功能，"
+              echo "    - 管理器版本略低于内核版本，完全兼容，root/SUSFS/KPM 加载功能全部正常可用。"
               echo "kversion=34965" >> $GITHUB_OUTPUT
-              # 保持 case 继续走通用逻辑，但不 break；这里 fall through 需要特殊处理
-              # 因为 bash case 不会自动 fall through，设置一个标记让通用逻辑知道要处理 ReSukiSU
-              RSU_CI_FLOW=true
+              exit 0
               ;;
             "ReSukiSU(34943)")
               echo "ReSukiSU(34943): 跳过管理器下载（内核版本 34943 过低，无匹配的官方管理器版本；用户自行提供管理器 APK）"
@@ -395,54 +397,13 @@ jobs:
 
           if [ -z "$DOWNLOAD_LIST" ]; then
             echo "未通过 CI 翻页找到 KSU ≤ $TARGET_KSU_VERSION 的管理器。"
-
-            # ========== ReSukiSU(34965) 专属 Fallback ==========
-            # 说明：ReSukiSU 仓库 build-manager.yml 没有任何成功的 CI runs，所以 CI 翻页永远拿不到。
-            # 退而求其次：从官方 Release v4.2.0-rc1 (KSU=35061) 下载全分支管理器合集打包给用户。
-            # 35061 和 34965 版本接近，通常可以兼容工作（KPM 也可使用）。
-            if [ "${{ inputs.kernelsu_variant }}" == "ReSukiSU(34965)" ]; then
-              echo "ReSukiSU(34965): 从 Release v4.2.0-rc1 (KSU 35061) 下载多分支管理器合集作为 fallback..."
-              mkdir -p "manager-artifacts/Manager-release"
-              mkdir -p "manager-artifacts/Manager-debug"
-              mkdir -p "manager-artifacts/Spoofed-Manager-release"
-
-              RELEASE_API="https://api.github.com/repos/ReSukiSU/ReSukiSU/releases/tags/v4.2.0-rc1"
-              ASSETS_JSON=$(curl -s "$RELEASE_API")
-              echo "$ASSETS_JSON" | jq -r '.assets[] | "\(.name)\t\(.browser_download_url)"' | while IFS=$'\t' read -r ASSET_NAME ASSET_URL; do
-                case "$ASSET_NAME" in
-                  *-arm64-v8a-release.apk)
-                    echo "  下载 arm64-v8a release: $ASSET_NAME"
-                    curl -fL -o "manager-artifacts/Manager-release/$ASSET_NAME" "$ASSET_URL" 2>/dev/null || true
-                    cp "manager-artifacts/Manager-release/$ASSET_NAME" "manager-artifacts/Spoofed-Manager-release/Spoofed-$ASSET_NAME" 2>/dev/null || true
-                    ;;
-                  *-armeabi-v7a-release.apk)
-                    echo "  下载 armeabi-v7a release: $ASSET_NAME"
-                    curl -fL -o "manager-artifacts/Manager-release/$ASSET_NAME" "$ASSET_URL" 2>/dev/null || true
-                    ;;
-                  *-x86_64-release.apk)
-                    echo "  下载 x86_64 release: $ASSET_NAME"
-                    curl -fL -o "manager-artifacts/Manager-release/$ASSET_NAME" "$ASSET_URL" 2>/dev/null || true
-                    ;;
-                  *-universal-release.apk)
-                    echo "  下载 universal release: $ASSET_NAME"
-                    curl -fL -o "manager-artifacts/Manager-release/$ASSET_NAME" "$ASSET_URL" 2>/dev/null || true
-                    ;;
-                  *-debug.apk)
-                    echo "  下载 debug 版: $ASSET_NAME"
-                    curl -fL -o "manager-artifacts/Manager-debug/$ASSET_NAME" "$ASSET_URL" 2>/dev/null || true
-                    ;;
-                esac
-              done
-              APK_COUNT=$(find manager-artifacts -type f -name "*.apk" 2>/dev/null | wc -l || echo 0)
-              if [ "$APK_COUNT" -gt 0 ]; then
-                echo "ReSukiSU(34965): Release fallback 成功下载 $APK_COUNT 个管理器 APK 多分支合集"
-              else
-                echo "警告: ReSukiSU(34965) Release fallback 也没下载到任何 APK"
-              fi
-            else
-              echo "未获取到 KSU 版本小于等于 $TARGET_KSU_VERSION 的 Manager artifact 下载地址列表。"
-              exit 1
-            fi
+            # 【注意】ReSukiSU 的 build-manager.yml workflow 历史成功次数 = 0，CI 翻页永远拿不到任何构建
+            #       同时 Release 中只有 v4.2.0-rc1（KSU=35061，4.2.x 时代，已移除 KPM 功能），
+            #       35000+ 构建号不支持 KPM，所以不做 Release fallback，避免给用户无 KPM 的管理器。
+            #       对 ReSukiSU(34965/34943)，我们在上面的 case 分支里已经 exit 0 跳过；
+            #       对其它变体 CI 翻页拿不到就报错退出。
+            echo "未获取到 KSU 版本小于等于 $TARGET_KSU_VERSION 的 Manager artifact 下载地址列表。"
+            exit 1
           else
             echo "选择 Manager 构建 $BEST_BUILD_ID ($BEST_BRANCH), KSU $BEST_VERSION"
             # 下载并解压所有 Manager 产物
