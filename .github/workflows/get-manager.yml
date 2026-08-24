@@ -81,6 +81,23 @@ jobs:
           elif [ "${{ inputs.kernelsu_variant }}" == "ReSukiSU" ]; then
             echo "This is the ReSukiSU variant"
             git clone https://github.com/ReSukiSU/ReSukiSU.git KernelSU
+          elif [ "${{ inputs.kernelsu_variant }}" == "ReSukiSU(34965)" ]; then
+            echo "This is the ReSukiSU(34965) variant"
+            git clone https://github.com/ReSukiSU/ReSukiSU.git KernelSU
+            # rev-list count = 34965 - 30700 = 4265 (ReSukiSU 公式: 30700 + git rev-list --count HEAD)
+            KSU_TARGET_VERSION=34965
+            TARGET_COUNT=$((KSU_TARGET_VERSION - 30700))
+            HEAD_COUNT=$(git -C KernelSU rev-list --count HEAD)
+            if [ "$HEAD_COUNT" -gt "$TARGET_COUNT" ]; then
+              BACKOFF=$((HEAD_COUNT - TARGET_COUNT))
+              TARGET_SHA=$(git -C KernelSU rev-list --max-count=1 --skip="$BACKOFF" HEAD)
+              if [ -n "$TARGET_SHA" ]; then
+                echo "ReSukiSU(34965): reset HEAD count $HEAD_COUNT -> $TARGET_COUNT (commit $TARGET_SHA)"
+                git -C KernelSU checkout "$TARGET_SHA"
+              else
+                echo "警告: 无法通过 --skip 定位到 ReSukiSU 34965 对应 commit，将使用当前 HEAD 继续编译"
+              fi
+            fi
           elif [ "${{ inputs.kernelsu_variant }}" == "ReSukiSU(34943)" ]; then
             echo "This is the ReSukiSU(34943) variant"
             git clone https://github.com/ReSukiSU/ReSukiSU.git KernelSU
@@ -120,6 +137,8 @@ jobs:
             KSU_VERSION=40548
           elif [ "${{ inputs.kernelsu_variant }}" == "ReSukiSU" ]; then
             KSU_VERSION=$((30700 + KSU_GIT_VERSION))
+          elif [ "${{ inputs.kernelsu_variant }}" == "ReSukiSU(34965)" ]; then
+            KSU_VERSION=34965
           elif [ "${{ inputs.kernelsu_variant }}" == "ReSukiSU(34943)" ]; then
             KSU_VERSION=34943
           elif [ "${{ inputs.kernelsu_variant }}" == "Official" ]; then
