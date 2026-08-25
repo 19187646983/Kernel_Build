@@ -783,51 +783,57 @@ jobs:
           VERSION_TEMPLATE="v${KSU_VERSION}-${CUSTOM_TAG}@${BRANCH_NAME}-${GIT_HASH}"
           echo "版本标识模板: $VERSION_TEMPLATE"
           printf '%s' "$VERSION_TEMPLATE" > /tmp/ksu_version.txt
-          cat > /tmp/ksu_inject.py <<SCRIPT_EOF
-          import os
-          version = open("/tmp/ksu_version.txt", "r", encoding="utf-8").read().strip()
-          for mf in ["./kernel/Makefile", "./Makefile"]:
-              if not os.path.isfile(mf):
-                  continue
-              content = open(mf, "r", encoding="utf-8").read()
-              new_line = "KSU_VERSION_FULL := " + version + "\n"
-              if "KSU_VERSION_FULL" in content:
-                  lines = content.splitlines(keepends=True)
-                  out = []
-                  for line in lines:
-                      if line.startswith("KSU_VERSION_FULL"):
-                          out.append(new_line)
-                      else:
-                          out.append(line)
-                  content = "".join(out)
-              else:
-                  if not content.endswith("\n"):
-                      content += "\n"
-                  content += new_line
-              open(mf, "w", encoding="utf-8").write(content)
-              print(mf + ": 已注入 KSU_VERSION_FULL")
-          c_str_escaped = version.replace("\\", "\\\\").replace("\"", "\\\"")
-          for kf in ["./kernel/Kbuild", "./Kbuild"]:
-              if not os.path.isfile(kf):
-                  continue
-              content = open(kf, "r", encoding="utf-8").read()
-              ccflag_line = "ccflags-y += -DKSU_VERSION_FULL=\\\\\"" + c_str_escaped + "\\\\\"\n"
-              if "KSU_VERSION_FULL" in content:
-                  lines = content.splitlines(keepends=True)
-                  out = []
-                  for line in lines:
-                      if "KSU_VERSION_FULL" in line and ("ccflags-y" in line or line.strip().startswith("KSU_VERSION_FULL")):
-                          out.append(ccflag_line)
-                      else:
-                          out.append(line)
-                  content = "".join(out)
-              else:
-                  if not content.endswith("\n"):
-                      content += "\n"
-                  content += ccflag_line
-              open(kf, "w", encoding="utf-8").write(content)
-              print(kf + ": 已注入编译标识")
-          SCRIPT_EOF
+          # 解码 Python 注入脚本（quoted heredoc 防 shell 解析）
+          base64 -d > /tmp/ksu_inject.py <<'B64_EOF'
+          IyAtKi0gY29kaW5nOiB1dGYtOCAtKi0KaW1wb3J0IG9zLCBzeXMKCndpdGggb3BlbigiL3Rt
+          cC9rc3VfdmVyc2lvbi50eHQiLCAiciIsIGVuY29kaW5nPSJ1dGYtOCIpIGFzIGY6CiAgICB2
+          ZXJzaW9uID0gZi5yZWFkKCkuc3RyaXAoKQoKaWYgbm90IHZlcnNpb246CiAgICBwcmludCgi
+          54mI5pys5a2X56ym5Liy5Li656m677yM6Lez6L+HIikKICAgIHN5cy5leGl0KDApCgpwcmlu
+          dCgi5rOo5YWl54mI5pysOiIsIHZlcnNpb24pCgojIDEuIOS/ruaUuSBNYWtlZmlsZTogS1NV
+          X1ZFUlNJT05fRlVMTCA6PSA8dmVyc2lvbj4KZm9yIG1mX3BhdGggaW4gWyIuL2tlcm5lbC9N
+          YWtlZmlsZSIsICIuL01ha2VmaWxlIl06CiAgICB0cnk6CiAgICAgICAgd2l0aCBvcGVuKG1m
+          X3BhdGgsICJyIiwgZW5jb2Rpbmc9InV0Zi04IikgYXMgZjoKICAgICAgICAgICAgY29udGVu
+          dCA9IGYucmVhZCgpCiAgICBleGNlcHQgRmlsZU5vdEZvdW5kRXJyb3I6CiAgICAgICAgY29u
+          dGludWUKICAgIG5ld19saW5lID0gIktTVV9WRVJTSU9OX0ZVTEwgOj0gIiArIHZlcnNpb24g
+          KyAiXG4iCiAgICBpZiAiS1NVX1ZFUlNJT05fRlVMTCIgaW4gY29udGVudDoKICAgICAgICBs
+          aW5lcyA9IGNvbnRlbnQuc3BsaXRsaW5lcyhrZWVwZW5kcz1UcnVlKQogICAgICAgIHJlc3Vs
+          dCA9IFtdCiAgICAgICAgZm9yIGxpbmUgaW4gbGluZXM6CiAgICAgICAgICAgIGlmIGxpbmUu
+          c3RhcnRzd2l0aCgiS1NVX1ZFUlNJT05fRlVMTCIpOgogICAgICAgICAgICAgICAgcmVzdWx0
+          LmFwcGVuZChuZXdfbGluZSkKICAgICAgICAgICAgZWxzZToKICAgICAgICAgICAgICAgIHJl
+          c3VsdC5hcHBlbmQobGluZSkKICAgICAgICBjb250ZW50ID0gIiIuam9pbihyZXN1bHQpCiAg
+          ICBlbHNlOgogICAgICAgIGlmIG5vdCBjb250ZW50LmVuZHN3aXRoKCJcbiIpOgogICAgICAg
+          ICAgICBjb250ZW50ICs9ICJcbiIKICAgICAgICBjb250ZW50ICs9IG5ld19saW5lCiAgICB3
+          aXRoIG9wZW4obWZfcGF0aCwgInciLCBlbmNvZGluZz0idXRmLTgiKSBhcyBmOgogICAgICAg
+          IGYud3JpdGUoY29udGVudCkKICAgIHByaW50KG1mX3BhdGggKyAiOiDlt7Lms6jlhaUgS1NV
+          X1ZFUlNJT05fRlVMTCIpCgojIDIuIOS/ruaUuSBLYnVpbGQ6IGNjZmxhZ3MteSArPSAtREtT
+          VV9WRVJTSU9OX0ZVTEw9XCJ2ZXJzaW9uX3N0cmluZ1wiCiMgICAg5ZyoIEtidWlsZCAoTWFr
+          ZSkg5Lit77yM6KaB5Lyg6YCS5bim5byV5Y+355qE5a2X56ym5Liy57uZ57yW6K+R5Zmo77yM
+          6ZyA6KaB6L2s5LmJ5byV5Y+3CiMgICAgUHl0aG9uIOWtl+espuS4suabv+aNojoKIyAgICAg
+          IHZlcnNpb24g5Lit55qEIFwg5Y+Y5oiQIFxcIChDIOWtl+espuS4sui9rOS5iSkKIyAgICAg
+          IHZlcnNpb24g5Lit55qEICIg5Y+Y5oiQIFwiIChDIOWtl+espuS4sui9rOS5iSkKIyAgICDn
+          hLblkI7mlbTkuKrniYjmnKzlrZfnrKbkuLLlnKggS2J1aWxkIOaWh+S7tuS4reeUqCBcIiDl
+          jIXoo7kKY19lc2NhcGVkID0gdmVyc2lvbi5yZXBsYWNlKCJcXCIsICJcXFxcIikucmVwbGFj
+          ZSgnIicsICdcXCInKQoKZm9yIGtmX3BhdGggaW4gWyIuL2tlcm5lbC9LYnVpbGQiLCAiLi9L
+          YnVpbGQiXToKICAgIHRyeToKICAgICAgICB3aXRoIG9wZW4oa2ZfcGF0aCwgInIiLCBlbmNv
+          ZGluZz0idXRmLTgiKSBhcyBmOgogICAgICAgICAgICBjb250ZW50ID0gZi5yZWFkKCkKICAg
+          IGV4Y2VwdCBGaWxlTm90Rm91bmRFcnJvcjoKICAgICAgICBjb250aW51ZQogICAgIyDlnKgg
+          S2J1aWxkIOaWh+S7tumHjOaIkeS7rOmcgOimgeWGmeWtl+mdoumHj++8mmNjZmxhZ3MteSAr
+          PSAtREtTVV9WRVJTSU9OX0ZVTEw9XCJlc2NhcGVkX3ZlcnNpb25cIgogICAgIyDkuZ/lsLHm
+          mK/mlofku7blhoXlrrnph4zopoHljIXlkKvlj43mlpzmnaDlkozlj4zlvJXlj7cKICAgIGNj
+          ZmxhZ19saW5lID0gJ2NjZmxhZ3MteSArPSAtREtTVV9WRVJTSU9OX0ZVTEw9XFwiJyArIGNf
+          ZXNjYXBlZCArICdcXCJcbicKICAgIGlmICJLU1VfVkVSU0lPTl9GVUxMIiBpbiBjb250ZW50
+          OgogICAgICAgIGxpbmVzID0gY29udGVudC5zcGxpdGxpbmVzKGtlZXBlbmRzPVRydWUpCiAg
+          ICAgICAgcmVzdWx0ID0gW10KICAgICAgICBmb3IgbGluZSBpbiBsaW5lczoKICAgICAgICAg
+          ICAgaWYgIktTVV9WRVJTSU9OX0ZVTEwiIGluIGxpbmUgYW5kICgiY2NmbGFncy15IiBpbiBs
+          aW5lIG9yIGxpbmUuc3RyaXAoKS5zdGFydHN3aXRoKCJLU1VfVkVSU0lPTl9GVUxMIikpOgog
+          ICAgICAgICAgICAgICAgcmVzdWx0LmFwcGVuZChjY2ZsYWdfbGluZSkKICAgICAgICAgICAg
+          ZWxzZToKICAgICAgICAgICAgICAgIHJlc3VsdC5hcHBlbmQobGluZSkKICAgICAgICBjb250
+          ZW50ID0gIiIuam9pbihyZXN1bHQpCiAgICBlbHNlOgogICAgICAgIGlmIG5vdCBjb250ZW50
+          LmVuZHN3aXRoKCJcbiIpOgogICAgICAgICAgICBjb250ZW50ICs9ICJcbiIKICAgICAgICBj
+          b250ZW50ICs9IGNjZmxhZ19saW5lCiAgICB3aXRoIG9wZW4oa2ZfcGF0aCwgInciLCBlbmNv
+          ZGluZz0idXRmLTgiKSBhcyBmOgogICAgICAgIGYud3JpdGUoY29udGVudCkKICAgIHByaW50
+          KGtmX3BhdGggKyAiOiDlt7Lms6jlhaXnvJbor5HmoIfor4YiKQo=
+          B64_EOF
           python3 /tmp/ksu_inject.py
           echo "已配置个人专属标识: $VERSION_TEMPLATE"
 
