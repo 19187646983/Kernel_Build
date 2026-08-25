@@ -760,18 +760,13 @@ jobs:
           CUSTOM_TAG="${{ inputs.ksu_custom_tag }}"
           [ -z "$CUSTOM_TAG" ] && CUSTOM_TAG="${{ vars.MANAGER_STR }}"
           [ -z "$CUSTOM_TAG" ] && echo "无自定义标识，跳过" && exit 0
-
           KERNEL_ROOT="${{ env.KERNEL_ROOT }}"
-          KSU_VARIANT="${{ inputs.ksu_variant }}"
           KSU_VERSION="${{ env.KSU_VERSION }}"
-
-          # 获取分支名和 hash
           BRANCH_NAME="${BRANCH#-s }"
           if [ -z "$BRANCH_NAME" ] || [ "$BRANCH_NAME" = "$BRANCH" ]; then
             BRANCH_NAME=$(git -C "$KERNEL_ROOT/KernelSU" rev-parse --abbrev-ref HEAD 2>/dev/null || echo "main")
           fi
           GIT_HASH=$(git -C "$KERNEL_ROOT/KernelSU" rev-parse --short=8 HEAD 2>/dev/null || echo "unknown")
-
           KSU_DIR=""
           if [ -d "$KERNEL_ROOT/KernelSU" ]; then
             KSU_DIR="$KERNEL_ROOT/KernelSU"
@@ -780,79 +775,61 @@ jobs:
           elif [ -d "$KERNEL_ROOT/drivers/kernelsu" ]; then
             KSU_DIR="$KERNEL_ROOT/drivers/kernelsu"
           fi
-
           if [ -z "$KSU_DIR" ]; then
             echo "未找到 KSU 源码目录，跳过版本标识定制"
             exit 0
           fi
-
           cd "$KSU_DIR"
-
-          # 生成版本模板（简化版本，移除 Kbuild/Make 语法冲突字符：()[] 等）
           VERSION_TEMPLATE="v${KSU_VERSION}-${CUSTOM_TAG}@${BRANCH_NAME}-${GIT_HASH}"
           echo "版本标识模板: $VERSION_TEMPLATE"
-          echo "$VERSION_TEMPLATE" > /tmp/ksu_version.txt
-
-          # 使用 Python 安全注入，避免 sed 转义和 Kbuild 语法冲突
-          python3 << 'PYEOF'
-import os
-
-version = open("/tmp/ksu_version.txt", "r", encoding="utf-8").read().strip()
-ksu_dir = os.getcwd()
-
-# 1. 修改 Makefile 变量（KSU_VERSION_FULL 用于 Kbuild 内部读取）
-for mf in ["./kernel/Makefile", "./Makefile"]:
-    if not os.path.isfile(mf):
-        continue
-    content = open(mf, "r", encoding="utf-8").read()
-    # Makefile 中直接赋值版本字符串（无 Make/Shell 解析风险：没有 $( 和空格分隔的宏）
-    new_line = "KSU_VERSION_FULL := " + version + "\n"
-    if "KSU_VERSION_FULL" in content:
-        lines = content.splitlines(keepends=True)
-        out = []
-        for line in lines:
-            if line.startswith("KSU_VERSION_FULL"):
-                out.append(new_line)
-            else:
-                out.append(line)
-        content = "".join(out)
-    else:
-        if not content.endswith("\n"):
-            content += "\n"
-        content += new_line
-    open(mf, "w", encoding="utf-8").write(content)
-    print(f"{mf}: 已注入 KSU_VERSION_FULL")
-
-# 2. 修改 Kbuild 文件：将版本字符串作为 C 宏字符串注入
-#    C 字符串转义
-c_str_escaped = version.replace("\\", "\\\\").replace('"', '\\"')
-
-for kf in ["./kernel/Kbuild", "./Kbuild"]:
-    if not os.path.isfile(kf):
-        continue
-    content = open(kf, "r", encoding="utf-8").read()
-    # 正确的 Kbuild ccflags 格式是：ccflags-y += -DKSU_VERSION_FULL="version_string"
-    # 对于 Make/Kbuild 文件来说，引号需要用反斜杠转义才能传递到编译器
-    ccflag_line = 'ccflags-y += -DKSU_VERSION_FULL=\\"' + c_str_escaped + '\\"\n'
-    if "KSU_VERSION_FULL" in content:
-        lines = content.splitlines(keepends=True)
-        out = []
-        for line in lines:
-            if "KSU_VERSION_FULL" in line and ("ccflags-y" in line or line.strip().startswith("KSU_VERSION_FULL")):
-                out.append(ccflag_line)
-            else:
-                out.append(line)
-        content = "".join(out)
-    else:
-        if not content.endswith("\n"):
-            content += "\n"
-        content += ccflag_line
-    open(kf, "w", encoding="utf-8").write(content)
-    print(f"{kf}: 已注入编译标识")
-
-PYEOF
-          
-          echo "✓ 个人专属标识已配置: $VERSION_TEMPLATE"
+          printf '%s' "$VERSION_TEMPLATE" > /tmp/ksu_version.txt
+          cat > /tmp/ksu_inject.py <<SCRIPT_EOF
+          import os
+          version = open("/tmp/ksu_version.txt", "r", encoding="utf-8").read().strip()
+          for mf in ["./kernel/Makefile", "./Makefile"]:
+              if not os.path.isfile(mf):
+                  continue
+              content = open(mf, "r", encoding="utf-8").read()
+              new_line = "KSU_VERSION_FULL := " + version + "\n"
+              if "KSU_VERSION_FULL" in content:
+                  lines = content.splitlines(keepends=True)
+                  out = []
+                  for line in lines:
+                      if line.startswith("KSU_VERSION_FULL"):
+                          out.append(new_line)
+                      else:
+                          out.append(line)
+                  content = "".join(out)
+              else:
+                  if not content.endswith("\n"):
+                      content += "\n"
+                  content += new_line
+              open(mf, "w", encoding="utf-8").write(content)
+              print(mf + ": 已注入 KSU_VERSION_FULL")
+          c_str_escaped = version.replace("\\", "\\\\").replace("\"", "\\\"")
+          for kf in ["./kernel/Kbuild", "./Kbuild"]:
+              if not os.path.isfile(kf):
+                  continue
+              content = open(kf, "r", encoding="utf-8").read()
+              ccflag_line = "ccflags-y += -DKSU_VERSION_FULL=\\\\\"" + c_str_escaped + "\\\\\"\n"
+              if "KSU_VERSION_FULL" in content:
+                  lines = content.splitlines(keepends=True)
+                  out = []
+                  for line in lines:
+                      if "KSU_VERSION_FULL" in line and ("ccflags-y" in line or line.strip().startswith("KSU_VERSION_FULL")):
+                          out.append(ccflag_line)
+                      else:
+                          out.append(line)
+                  content = "".join(out)
+              else:
+                  if not content.endswith("\n"):
+                      content += "\n"
+                  content += ccflag_line
+              open(kf, "w", encoding="utf-8").write(content)
+              print(kf + ": 已注入编译标识")
+          SCRIPT_EOF
+          python3 /tmp/ksu_inject.py
+          echo "已配置个人专属标识: $VERSION_TEMPLATE"
 
       - name: 应用 SUSFS 补丁
         if: inputs.enable_susfs
