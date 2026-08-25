@@ -220,43 +220,53 @@ jobs:
             "ReSukiSU(34943)")
               echo "ReSukiSU(34943): 从用户 fork (Qiangge626/ReSukiSU) 下载管理器..."
               KSU_VERSION=34943
-              FORK_RELEASE_TAG="v34943"
               FORK_REPO="Qiangge626/ReSukiSU"
+              FORK_RELEASE_TAG="34943"
               echo "  查找 Release: $FORK_REPO tag=$FORK_RELEASE_TAG"
               RELEASE_JSON=$(curl -fsSL "https://api.github.com/repos/$FORK_REPO/releases/tags/$FORK_RELEASE_TAG" 2>/dev/null)
               if [ -z "$RELEASE_JSON" ] || [ "$RELEASE_JSON" = "null" ]; then
-                echo "  Release $FORK_RELEASE_TAG 未找到，尝试列出所有 Release..."
+                echo "  tag=$FORK_RELEASE_TAG 未找到，尝试 v34943..."
+                FORK_RELEASE_TAG="v34943"
+                RELEASE_JSON=$(curl -fsSL "https://api.github.com/repos/$FORK_REPO/releases/tags/$FORK_RELEASE_TAG" 2>/dev/null)
+              fi
+              if [ -z "$RELEASE_JSON" ] || [ "$RELEASE_JSON" = "null" ]; then
+                echo "  未找到指定 tag，列出所有 Release..."
                 RELEASE_JSON=$(curl -fsSL "https://api.github.com/repos/$FORK_REPO/releases?per_page=50" 2>/dev/null)
                 FORK_RELEASE_TAG=$(echo "$RELEASE_JSON" | jq -r ".[] | select(.tag_name | test(\"34943\")) | .tag_name" 2>/dev/null | head -1)
                 if [ -z "$FORK_RELEASE_TAG" ]; then
                   FORK_RELEASE_TAG=$(echo "$RELEASE_JSON" | jq -r ".[0].tag_name" 2>/dev/null)
                 fi
-                echo "  使用最新 Release tag: $FORK_RELEASE_TAG"
+                echo "  使用 Release tag: $FORK_RELEASE_TAG"
                 RELEASE_JSON=$(curl -fsSL "https://api.github.com/repos/$FORK_REPO/releases/tags/$FORK_RELEASE_TAG" 2>/dev/null)
               fi
               if [ -z "$RELEASE_JSON" ] || [ "$RELEASE_JSON" = "null" ]; then
-                echo "  [错误] 无法从 $FORK_REPO 获取 Release 信息"
-                echo "  请先将 34943 管理器 APK 上传到 https://github.com/$FORK_REPO/releases"
+                echo "  [错误] 无法从 $FORK_REPO 获取 Release"
+                echo "  请先将 34943 管理器上传到 https://github.com/$FORK_REPO/releases"
                 echo "kversion=34943" >> $GITHUB_OUTPUT
                 exit 1
               fi
               mkdir -p "manager-artifacts/ReSukiSU_34943"
-              APK_COUNT=0
               echo "$RELEASE_JSON" | jq -c '.assets[]' | while read -r ASSET; do
                 NAME=$(echo "$ASSET" | jq -r '.name')
                 URL=$(echo "$ASSET" | jq -r '.browser_download_url')
                 SAFE_NAME=$(echo "$NAME" | sed 's/[^a-zA-Z0-9._-]/_/g')
                 echo "  下载: $NAME"
-                curl -fsSL -o "manager-artifacts/ReSukiSU_34943/$SAFE_NAME" "$URL" 2>/dev/null && APK_COUNT=$((APK_COUNT + 1))
+                curl -fsSL -o "manager-artifacts/ReSukiSU_34943/$SAFE_NAME" "$URL" 2>/dev/null
+                if [[ "$SAFE_NAME" == *.zip ]]; then
+                  echo "    解压: $SAFE_NAME"
+                  unzip -o "manager-artifacts/ReSukiSU_34943/$SAFE_NAME" -d "manager-artifacts/ReSukiSU_34943/" 2>/dev/null
+                  rm -f "manager-artifacts/ReSukiSU_34943/$SAFE_NAME"
+                fi
               done
-              APK_COUNT=$(ls manager-artifacts/ReSukiSU_34943/*.apk 2>/dev/null | wc -l)
+              APK_COUNT=$(find manager-artifacts/ReSukiSU_34943 -type f -name "*.apk" 2>/dev/null | wc -l)
               if [ "$APK_COUNT" -eq 0 ]; then
-                echo "  [错误] 未在 Release $FORK_RELEASE_TAG 中找到任何 APK 文件"
-                echo "  请确认已将 34943 管理器 APK 上传到 $FORK_REPO Release"
+                echo "  [错误] 未在 Release 中找到任何 APK 文件"
+                echo "  请确认已将 34943 管理器上传到 $FORK_REPO Release"
                 echo "kversion=34943" >> $GITHUB_OUTPUT
                 exit 1
               fi
-              echo "  成功下载 $APK_COUNT 个 APK 文件"
+              echo "  成功获取 $APK_COUNT 个 APK 文件"
+              find manager-artifacts/ReSukiSU_34943 -type f -name "*.apk" -print
               echo "kversion=34943" >> $GITHUB_OUTPUT
               exit 0
               ;;
