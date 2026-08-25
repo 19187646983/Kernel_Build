@@ -52,6 +52,11 @@ on:
         type: string
         default: ""
         required: false
+      ksu_custom_tag:
+        description: "KSU 版本自定义标识 (如: 爱玩机的强哥，留空则使用仓库变量 MANAGER_STR)"
+        type: string
+        default: ""
+        required: false
       build_time:
         description: "自定义构建时间 (可选，N或留空=当前UTC)"
         type: string
@@ -145,6 +150,7 @@ jobs:
     with:
       kernelsu_variant: ${{ inputs.kernelsu_variant }}
       version: ${{ inputs.version }}
+      ksu_custom_tag: ${{ inputs.ksu_custom_tag || '' }}
       build_time: ${{ inputs.build_time || '' }}
       use_zram: ${{ inputs.use_zram }}
       use_bbg: ${{ inputs.use_bbg }}
@@ -165,6 +171,7 @@ jobs:
     with:
       kernelsu_variant: ${{ inputs.kernelsu_variant }}
       version: ${{ inputs.version }}
+      ksu_custom_tag: ${{ inputs.ksu_custom_tag || '' }}
       build_time: ${{ inputs.build_time || '' }}
       use_zram: ${{ inputs.use_zram }}
       use_bbg: ${{ inputs.use_bbg }}
@@ -185,6 +192,7 @@ jobs:
     with:
       kernelsu_variant: ${{ inputs.kernelsu_variant }}
       version: ${{ inputs.version }}
+      ksu_custom_tag: ${{ inputs.ksu_custom_tag || '' }}
       build_time: ${{ inputs.build_time || '' }}
       use_zram: ${{ inputs.use_zram }}
       use_bbg: ${{ inputs.use_bbg }}
@@ -205,6 +213,7 @@ jobs:
     with:
       kernelsu_variant: ${{ inputs.kernelsu_variant }}
       version: ${{ inputs.version }}
+      ksu_custom_tag: ${{ inputs.ksu_custom_tag || '' }}
       build_time: ${{ inputs.build_time || '' }}
       use_zram: ${{ inputs.use_zram }}
       use_bbg: ${{ inputs.use_bbg }}
@@ -225,6 +234,7 @@ jobs:
     with:
       kernelsu_variant: ${{ inputs.kernelsu_variant }}
       version: ${{ inputs.version }}
+      ksu_custom_tag: ${{ inputs.ksu_custom_tag || '' }}
       build_time: ${{ inputs.build_time || '' }}
       use_zram: ${{ inputs.use_zram }}
       use_bbg: ${{ inputs.use_bbg }}

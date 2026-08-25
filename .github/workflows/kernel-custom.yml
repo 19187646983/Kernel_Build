@@ -46,6 +46,11 @@ on:
         description: "自定义版本名 (可选)"
         required: false
         type: string
+      ksu_custom_tag:
+        description: "KSU 版本自定义标识 (如: 爱玩机的强哥，留空则使用仓库变量 MANAGER_STR)"
+        required: false
+        type: string
+        default: ""
       build_time:
         description: "自定义构建时间 (可选，N或留空=当前UTC)"
         required: false
@@ -206,6 +211,7 @@ jobs:
       revision: "r1"
       ksu_variant: ${{ inputs.kernelsu_variant }}
       version: ${{ inputs.version || '' }}
+      ksu_custom_tag: ${{ inputs.ksu_custom_tag || '' }}
       build_time: ${{ inputs.build_time || '' }}
       use_zram: ${{ inputs.use_zram }}
       use_bbg: ${{ inputs.use_bbg }}
