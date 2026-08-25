@@ -788,66 +788,70 @@ jobs:
 
           cd "$KSU_DIR"
 
-          # 生成版本模板
-          VERSION_TEMPLATE="v${KSU_VERSION}-${CUSTOM_TAG}@${BRANCH_NAME}[${GIT_HASH}]"
+          # 生成版本模板（简化版本，移除 Kbuild/Make 语法冲突字符：()[] 等）
+          VERSION_TEMPLATE="v${KSU_VERSION}-${CUSTOM_TAG}@${BRANCH_NAME}-${GIT_HASH}"
           echo "版本标识模板: $VERSION_TEMPLATE"
+          echo "$VERSION_TEMPLATE" > /tmp/ksu_version.txt
 
-          # 构造安全的编译宏参数（使用单引号避免 shell 解析问题）
-          KBUILD_MACRO='-DKSU_VERSION_FULL="'"$VERSION_TEMPLATE"'"'
-          MAKEFILE_MACRO="KSU_VERSION_FULL := $VERSION_TEMPLATE"
-          echo "编译宏参数: $KBUILD_MACRO"
+          # 使用 Python 安全注入，避免 sed 转义和 Kbuild 语法冲突
+          python3 << 'PYEOF'
+import os
 
-          case "$KSU_VARIANT" in
-            "SukiSU"|"SukiSU(40726)"|"SukiSU(40548)")
-              KBUILD_FILE="./kernel/Kbuild"
-              if [ ! -f "$KBUILD_FILE" ]; then
-                KBUILD_FILE="./Kbuild"
-              fi
-              if [ -f "$KBUILD_FILE" ]; then
-                awk -v body="$VERSION_TEMPLATE" '
-                  BEGIN { in_block = 0; replaced = 0 }
-                  /^[[:space:]]*define get_ksu_version_full$/ {
-                    print; print body; in_block = 1; replaced = 1; next
-                  }
-                  in_block && /^[[:space:]]*endef$/ { print; in_block = 0; next }
-                  !in_block { print }
-                  END { if (!replaced) exit 1 }
-                ' "$KBUILD_FILE" > "${KBUILD_FILE}.tmp" && mv "${KBUILD_FILE}.tmp" "$KBUILD_FILE"
-                echo "SukiSU: 已更新 get_ksu_version_full 模板"
-              else
-                echo "未找到 $KBUILD_FILE，跳过 SukiSU 版本标识定制"
-              fi
-              ;;
-            *)
-              echo "$VERSION_TEMPLATE" > /tmp/ksu_version_full.txt
-              if [ -f "./kernel/Makefile" ]; then
-                MF="./kernel/Makefile"
-              elif [ -f "./Makefile" ]; then
-                MF="./Makefile"
-              else
-                MF=""
-              fi
-              if [ -n "$MF" ]; then
-                if grep -q '^KSU_VERSION_FULL' "$MF"; then
-                  sed -i "s|^KSU_VERSION_FULL.*|$MAKEFILE_MACRO|" "$MF"
-                else
-                  echo "$MAKEFILE_MACRO" >> "$MF"
-                fi
-                echo "$MF: 已注入 $MAKEFILE_MACRO"
-              fi
+version = open("/tmp/ksu_version.txt", "r", encoding="utf-8").read().strip()
+ksu_dir = os.getcwd()
 
-              for KF in ./kernel/Kbuild ./Kbuild; do
-                [ -f "$KF" ] || continue
-                if grep -q 'KSU_VERSION_FULL' "$KF"; then
-                  sed -i "s/KSU_VERSION_FULL.*/KSU_VERSION_FULL = \"$VERSION_TEMPLATE\"/" "$KF"
-                else
-                  echo "ccflags-y += $KBUILD_MACRO" >> "$KF"
-                fi
-                echo "$KF: 已注入编译标识"
-              done
-              ;;
-          esac
+# 1. 修改 Makefile 变量（KSU_VERSION_FULL 用于 Kbuild 内部读取）
+for mf in ["./kernel/Makefile", "./Makefile"]:
+    if not os.path.isfile(mf):
+        continue
+    content = open(mf, "r", encoding="utf-8").read()
+    # Makefile 中直接赋值版本字符串（无 Make/Shell 解析风险：没有 $( 和空格分隔的宏）
+    new_line = "KSU_VERSION_FULL := " + version + "\n"
+    if "KSU_VERSION_FULL" in content:
+        lines = content.splitlines(keepends=True)
+        out = []
+        for line in lines:
+            if line.startswith("KSU_VERSION_FULL"):
+                out.append(new_line)
+            else:
+                out.append(line)
+        content = "".join(out)
+    else:
+        if not content.endswith("\n"):
+            content += "\n"
+        content += new_line
+    open(mf, "w", encoding="utf-8").write(content)
+    print(f"{mf}: 已注入 KSU_VERSION_FULL")
 
+# 2. 修改 Kbuild 文件：将版本字符串作为 C 宏字符串注入
+#    C 字符串转义
+c_str_escaped = version.replace("\\", "\\\\").replace('"', '\\"')
+
+for kf in ["./kernel/Kbuild", "./Kbuild"]:
+    if not os.path.isfile(kf):
+        continue
+    content = open(kf, "r", encoding="utf-8").read()
+    # 正确的 Kbuild ccflags 格式是：ccflags-y += -DKSU_VERSION_FULL="version_string"
+    # 对于 Make/Kbuild 文件来说，引号需要用反斜杠转义才能传递到编译器
+    ccflag_line = 'ccflags-y += -DKSU_VERSION_FULL=\\"' + c_str_escaped + '\\"\n'
+    if "KSU_VERSION_FULL" in content:
+        lines = content.splitlines(keepends=True)
+        out = []
+        for line in lines:
+            if "KSU_VERSION_FULL" in line and ("ccflags-y" in line or line.strip().startswith("KSU_VERSION_FULL")):
+                out.append(ccflag_line)
+            else:
+                out.append(line)
+        content = "".join(out)
+    else:
+        if not content.endswith("\n"):
+            content += "\n"
+        content += ccflag_line
+    open(kf, "w", encoding="utf-8").write(content)
+    print(f"{kf}: 已注入编译标识")
+
+PYEOF
+          
           echo "✓ 个人专属标识已配置: $VERSION_TEMPLATE"
 
       - name: 应用 SUSFS 补丁
