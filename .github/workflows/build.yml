@@ -761,24 +761,15 @@ jobs:
           [ -z "$CUSTOM_TAG" ] && CUSTOM_TAG="${{ vars.MANAGER_STR }}"
           [ -z "$CUSTOM_TAG" ] && echo "无自定义标识，跳过" && exit 0
 
-          # 清理标签：移除中文和 shell 特殊字符，保留字母、数字、连字符、下划线、点
-          CUSTOM_TAG_CLEAN=$(echo "$CUSTOM_TAG" | sed 's/[^a-zA-Z0-9._-]/_/g')
-          if [ "$CUSTOM_TAG" != "$CUSTOM_TAG_CLEAN" ]; then
-            echo "⚠ 标签已清理: '$CUSTOM_TAG' -> '$CUSTOM_TAG_CLEAN'"
-          fi
-          CUSTOM_TAG="$CUSTOM_TAG_CLEAN"
-
           KERNEL_ROOT="${{ env.KERNEL_ROOT }}"
           KSU_VARIANT="${{ inputs.ksu_variant }}"
           KSU_VERSION="${{ env.KSU_VERSION }}"
 
-          # 清理分支名和 hash，移除 shell 特殊字符
+          # 获取分支名和 hash
           BRANCH_NAME="${BRANCH#-s }"
           if [ -z "$BRANCH_NAME" ] || [ "$BRANCH_NAME" = "$BRANCH" ]; then
             BRANCH_NAME=$(git -C "$KERNEL_ROOT/KernelSU" rev-parse --abbrev-ref HEAD 2>/dev/null || echo "main")
           fi
-          BRANCH_NAME=$(echo "$BRANCH_NAME" | sed 's/[^a-zA-Z0-9._-]/_/g')
-
           GIT_HASH=$(git -C "$KERNEL_ROOT/KernelSU" rev-parse --short=8 HEAD 2>/dev/null || echo "unknown")
 
           KSU_DIR=""
@@ -797,8 +788,14 @@ jobs:
 
           cd "$KSU_DIR"
 
+          # 生成版本模板
           VERSION_TEMPLATE="v${KSU_VERSION}-${CUSTOM_TAG}@${BRANCH_NAME}[${GIT_HASH}]"
           echo "版本标识模板: $VERSION_TEMPLATE"
+
+          # 构造安全的编译宏参数（使用单引号避免 shell 解析问题）
+          KBUILD_MACRO='-DKSU_VERSION_FULL="'"$VERSION_TEMPLATE"'"'
+          MAKEFILE_MACRO="KSU_VERSION_FULL := $VERSION_TEMPLATE"
+          echo "编译宏参数: $KBUILD_MACRO"
 
           case "$KSU_VARIANT" in
             "SukiSU"|"SukiSU(40726)"|"SukiSU(40548)")
@@ -832,21 +829,21 @@ jobs:
               fi
               if [ -n "$MF" ]; then
                 if grep -q '^KSU_VERSION_FULL' "$MF"; then
-                  sed -i "s|^KSU_VERSION_FULL.*|KSU_VERSION_FULL := $VERSION_TEMPLATE|" "$MF"
+                  sed -i "s|^KSU_VERSION_FULL.*|$MAKEFILE_MACRO|" "$MF"
                 else
-                  echo "KSU_VERSION_FULL := $VERSION_TEMPLATE" >> "$MF"
+                  echo "$MAKEFILE_MACRO" >> "$MF"
                 fi
-                echo "$MF: 已注入 KSU_VERSION_FULL = $VERSION_TEMPLATE"
+                echo "$MF: 已注入 $MAKEFILE_MACRO"
               fi
 
               for KF in ./kernel/Kbuild ./Kbuild; do
                 [ -f "$KF" ] || continue
                 if grep -q 'KSU_VERSION_FULL' "$KF"; then
-                  sed -i "s/KSU_VERSION_FULL.*KSU_VERSION_FULL.*/KSU_VERSION_FULL = \"$VERSION_TEMPLATE\"/" "$KF"
+                  sed -i "s/KSU_VERSION_FULL.*/KSU_VERSION_FULL = \"$VERSION_TEMPLATE\"/" "$KF"
                 else
-                  echo "ccflags-y += -DKSU_VERSION_FULL=\"$VERSION_TEMPLATE\"" >> "$KF"
+                  echo "ccflags-y += $KBUILD_MACRO" >> "$KF"
                 fi
-                echo "$KF: 已注入 -DKSU_VERSION_FULL 编译标识"
+                echo "$KF: 已注入编译标识"
               done
               ;;
           esac
