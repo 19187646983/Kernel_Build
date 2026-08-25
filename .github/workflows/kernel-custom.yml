@@ -37,7 +37,6 @@ on:
           - SukiSU(40726)
           - SukiSU(40548)
           - ReSukiSU
-          - ReSukiSU(34965)
           - ReSukiSU(34943)
         default: ReSukiSU
 

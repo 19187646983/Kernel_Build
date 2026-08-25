@@ -184,7 +184,6 @@ jobs:
           case "${{ inputs.ksu_variant }}" in
             "SukiSU(40726)") KSU_VERSION=40796 ;;
             "SukiSU(40548)") KSU_VERSION=40548 ;;
-            "ReSukiSU(34965)") KSU_VERSION=34965 ;;
             "ReSukiSU(34943)") KSU_VERSION=34943 ;;
             *) KSU_VERSION="" ;;
           esac
@@ -442,7 +441,7 @@ jobs:
           variant_input="${{ inputs.ksu_variant }}"
 
           case "$variant_input" in
-            "Official"|"ReSukiSU"|"ReSukiSU(34965)"|"ReSukiSU(34943)")
+            "Official"|"ReSukiSU"|"ReSukiSU(34943)")
               BRANCH="-s main"
               ;;
             "SukiSU")
@@ -688,50 +687,6 @@ jobs:
               fi
               inject_resukisu_version "${KSU_VERSION:-0}"
               ;;
-            "ReSukiSU(34965)")
-              echo "添加 ReSukiSU (34965)..."
-              curl -LSs "https://raw.githubusercontent.com/ReSukiSU/ReSukiSU/main/kernel/setup.sh" | bash $BRANCH
-
-              # 公式：KSU_VERSION = 30700 + git rev-list --count HEAD  =>  target count = 34965 - 30700 = 4265
-              KSU_VERSION=34965
-              TARGET_COUNT=4265
-              if [ -d "KernelSU/.git" ]; then
-                cd KernelSU
-                HEAD_COUNT=$(git rev-list --count HEAD)
-                if [ "$HEAD_COUNT" -gt "$TARGET_COUNT" ]; then
-                  BACKOFF=$((HEAD_COUNT - TARGET_COUNT))
-                  TARGET_SHA=$(git rev-list --max-count=1 --skip="$BACKOFF" HEAD)
-                  if [ -n "$TARGET_SHA" ]; then
-                    NEW_COUNT=$(git rev-list --count "$TARGET_SHA")
-                    if [ "$NEW_COUNT" -eq "$TARGET_COUNT" ]; then
-                      echo "ReSukiSU(34965): checkout $TARGET_SHA (rev-list count $TARGET_COUNT)"
-                      git checkout "$TARGET_SHA"
-                    else
-                      echo "警告: rev-list $TARGET_SHA count=$NEW_COUNT，不等于目标 $TARGET_COUNT; 尝试线性搜索"
-                      BEST_SHA=""
-                      BEST_DIFF=999999
-                      i=0
-                      for SHA in $(git rev-list HEAD); do
-                        C=$(git rev-list --count "$SHA" 2>/dev/null || echo 0)
-                        D=$(( C - TARGET_COUNT )); if [ "$D" -lt 0 ]; then D=$(( -D )); fi
-                        if [ "$D" -lt "$BEST_DIFF" ]; then
-                          BEST_DIFF=$D; BEST_SHA=$SHA
-                          if [ "$BEST_DIFF" -eq 0 ]; then break; fi
-                        fi
-                        i=$((i+1)); [ "$i" -ge 200 ] && break
-                      done
-                      if [ -n "$BEST_SHA" ]; then
-                        echo "ReSukiSU(34965): 使用最接近 commit $BEST_SHA (diff=$BEST_DIFF)"
-                        git checkout "$BEST_SHA"
-                      fi
-                    fi
-                  fi
-                fi
-                cd ..
-              fi
-              echo "KSU_VERSION=$KSU_VERSION" >> $GITHUB_ENV
-              inject_resukisu_version "$KSU_VERSION"
-              ;;
             "ReSukiSU(34943)")
               echo "添加 ReSukiSU (34943)..."
               curl -LSs "https://raw.githubusercontent.com/ReSukiSU/ReSukiSU/main/kernel/setup.sh" | bash $BRANCH
@@ -912,7 +867,7 @@ jobs:
 
               cd ..
               ;;
-            "Next"|"SukiSU"|"SukiSU(40726)"|"SukiSU(40548)"|"ReSukiSU"|"ReSukiSU(34965)"|"ReSukiSU(34943)")
+            "Next"|"SukiSU"|"SukiSU(40726)"|"SukiSU(40548)"|"ReSukiSU"|"ReSukiSU(34943)")
               echo "Next/SukiSU/SukiSU(40726)/SukiSU(40548)/ReSukiSU 使用内置 SUSFS 支持"
               ;;
           esac

@@ -41,7 +41,6 @@ on:
           - SukiSU(40726)
           - SukiSU(40548)
           - ReSukiSU
-          - ReSukiSU(34965)
           - Official
           #- Next
         default: ReSukiSU
@@ -474,7 +473,7 @@ jobs:
                 BRANCH="builtin"
               fi
               ;;
-            "ReSukiSU"|"ReSukiSU(34965)") BRANCH="main" ;;
+            "ReSukiSU") BRANCH="main" ;;
             "Next") BRANCH="dev" ;;
             *) echo "错误: 未知变体" >&2; exit 1 ;;
           esac

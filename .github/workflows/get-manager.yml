@@ -81,23 +81,6 @@ jobs:
           elif [ "${{ inputs.kernelsu_variant }}" == "ReSukiSU" ]; then
             echo "This is the ReSukiSU variant"
             git clone https://github.com/ReSukiSU/ReSukiSU.git KernelSU
-          elif [ "${{ inputs.kernelsu_variant }}" == "ReSukiSU(34965)" ]; then
-            echo "This is the ReSukiSU(34965) variant"
-            git clone https://github.com/ReSukiSU/ReSukiSU.git KernelSU
-            # rev-list count = 34965 - 30700 = 4265 (ReSukiSU 公式: 30700 + git rev-list --count HEAD)
-            KSU_TARGET_VERSION=34965
-            TARGET_COUNT=$((KSU_TARGET_VERSION - 30700))
-            HEAD_COUNT=$(git -C KernelSU rev-list --count HEAD)
-            if [ "$HEAD_COUNT" -gt "$TARGET_COUNT" ]; then
-              BACKOFF=$((HEAD_COUNT - TARGET_COUNT))
-              TARGET_SHA=$(git -C KernelSU rev-list --max-count=1 --skip="$BACKOFF" HEAD)
-              if [ -n "$TARGET_SHA" ]; then
-                echo "ReSukiSU(34965): reset HEAD count $HEAD_COUNT -> $TARGET_COUNT (commit $TARGET_SHA)"
-                git -C KernelSU checkout "$TARGET_SHA"
-              else
-                echo "警告: 无法通过 --skip 定位到 ReSukiSU 34965 对应 commit，将使用当前 HEAD 继续编译"
-              fi
-            fi
           elif [ "${{ inputs.kernelsu_variant }}" == "ReSukiSU(34943)" ]; then
             echo "This is the ReSukiSU(34943) variant"
             git clone https://github.com/ReSukiSU/ReSukiSU.git KernelSU
@@ -137,8 +120,6 @@ jobs:
             KSU_VERSION=40548
           elif [ "${{ inputs.kernelsu_variant }}" == "ReSukiSU" ]; then
             KSU_VERSION=$((30700 + KSU_GIT_VERSION))
-          elif [ "${{ inputs.kernelsu_variant }}" == "ReSukiSU(34965)" ]; then
-            KSU_VERSION=34965
           elif [ "${{ inputs.kernelsu_variant }}" == "ReSukiSU(34943)" ]; then
             KSU_VERSION=34943
           elif [ "${{ inputs.kernelsu_variant }}" == "Official" ]; then
@@ -236,21 +217,46 @@ jobs:
               exit 0
               ;;
             "SukiSU(40548)") LEGACY_RELEASE_TAG="v2.0.0-r34"; LEGACY_DIR="SukiSU_40548" ;;
-            "ReSukiSU(34965)")
-              echo "ReSukiSU(34965): 跳过管理器下载。"
-              echo "  [重要说明] ReSukiSU 官方从未发布过 KSU=34965（4.1.0 最终版，带 KPM）的管理器 APK："
-              echo "    - 官方 Release 只有 v4.2.0-rc1（KSU=35061，4.2.x 时代，已移除 KPM 功能），"
-              echo "      该版本 35000+ 构建号不支持 KPM，不可使用。"
-              echo "    - build-manager.yml workflow 历史成功次数 = 0，无法从 CI 翻页获取任何管理器。"
-              echo "    - 4.1.0/4.0.0/v3.x 系列都只有 tag，没有发布任何 APK 资产。"
-              echo "  [推荐方案] 请使用你自己保留的 ReSukiSU 34943 版本全分支管理器："
-              echo "    - 34943 与 34965 仅相差 22 个版本，同属 4.1.x 时代，100% 支持 KPM 功能，"
-              echo "    - 管理器版本略低于内核版本，完全兼容，root/SUSFS/KPM 加载功能全部正常可用。"
-              echo "kversion=34965" >> $GITHUB_OUTPUT
-              exit 0
-              ;;
             "ReSukiSU(34943)")
-              echo "ReSukiSU(34943): 跳过管理器下载（内核版本 34943 过低，无匹配的官方管理器版本；用户自行提供管理器 APK）"
+              echo "ReSukiSU(34943): 从用户 fork (Qiangge626/ReSukiSU) 下载管理器..."
+              KSU_VERSION=34943
+              FORK_RELEASE_TAG="v34943"
+              FORK_REPO="Qiangge626/ReSukiSU"
+              echo "  查找 Release: $FORK_REPO tag=$FORK_RELEASE_TAG"
+              RELEASE_JSON=$(curl -fsSL "https://api.github.com/repos/$FORK_REPO/releases/tags/$FORK_RELEASE_TAG" 2>/dev/null)
+              if [ -z "$RELEASE_JSON" ] || [ "$RELEASE_JSON" = "null" ]; then
+                echo "  Release $FORK_RELEASE_TAG 未找到，尝试列出所有 Release..."
+                RELEASE_JSON=$(curl -fsSL "https://api.github.com/repos/$FORK_REPO/releases?per_page=50" 2>/dev/null)
+                FORK_RELEASE_TAG=$(echo "$RELEASE_JSON" | jq -r ".[] | select(.tag_name | test(\"34943\")) | .tag_name" 2>/dev/null | head -1)
+                if [ -z "$FORK_RELEASE_TAG" ]; then
+                  FORK_RELEASE_TAG=$(echo "$RELEASE_JSON" | jq -r ".[0].tag_name" 2>/dev/null)
+                fi
+                echo "  使用最新 Release tag: $FORK_RELEASE_TAG"
+                RELEASE_JSON=$(curl -fsSL "https://api.github.com/repos/$FORK_REPO/releases/tags/$FORK_RELEASE_TAG" 2>/dev/null)
+              fi
+              if [ -z "$RELEASE_JSON" ] || [ "$RELEASE_JSON" = "null" ]; then
+                echo "  [错误] 无法从 $FORK_REPO 获取 Release 信息"
+                echo "  请先将 34943 管理器 APK 上传到 https://github.com/$FORK_REPO/releases"
+                echo "kversion=34943" >> $GITHUB_OUTPUT
+                exit 1
+              fi
+              mkdir -p "manager-artifacts/ReSukiSU_34943"
+              APK_COUNT=0
+              echo "$RELEASE_JSON" | jq -c '.assets[]' | while read -r ASSET; do
+                NAME=$(echo "$ASSET" | jq -r '.name')
+                URL=$(echo "$ASSET" | jq -r '.browser_download_url')
+                SAFE_NAME=$(echo "$NAME" | sed 's/[^a-zA-Z0-9._-]/_/g')
+                echo "  下载: $NAME"
+                curl -fsSL -o "manager-artifacts/ReSukiSU_34943/$SAFE_NAME" "$URL" 2>/dev/null && APK_COUNT=$((APK_COUNT + 1))
+              done
+              APK_COUNT=$(ls manager-artifacts/ReSukiSU_34943/*.apk 2>/dev/null | wc -l)
+              if [ "$APK_COUNT" -eq 0 ]; then
+                echo "  [错误] 未在 Release $FORK_RELEASE_TAG 中找到任何 APK 文件"
+                echo "  请确认已将 34943 管理器 APK 上传到 $FORK_REPO Release"
+                echo "kversion=34943" >> $GITHUB_OUTPUT
+                exit 1
+              fi
+              echo "  成功下载 $APK_COUNT 个 APK 文件"
               echo "kversion=34943" >> $GITHUB_OUTPUT
               exit 0
               ;;
@@ -279,7 +285,7 @@ jobs:
             echo "SukiSU..."
             REPO="SukiSU-Ultra/SukiSU-Ultra"
             KSUM="manager"
-          elif [ "${{ inputs.kernelsu_variant }}" == "ReSukiSU" ] || [ "${{ inputs.kernelsu_variant }}" == "ReSukiSU(34965)" ] || [ "${{ inputs.kernelsu_variant }}" == "ReSukiSU(34943)" ]; then
+          elif [ "${{ inputs.kernelsu_variant }}" == "ReSukiSU" ] || [ "${{ inputs.kernelsu_variant }}" == "ReSukiSU(34943)" ]; then
             echo "ReSukiSU..."
             REPO="ReSukiSU/ReSukiSU"
             KSUM="manager"
@@ -312,7 +318,7 @@ jobs:
             git_version=$(git -C KernelSU rev-list --count "$head_sha")
             case "${{ inputs.kernelsu_variant }}" in
               "SukiSU") echo $((40000 + git_version - 2815)) ;;
-              "ReSukiSU"|"ReSukiSU(34965)"|"ReSukiSU(34943)") echo $((30700 + git_version)) ;;
+              "ReSukiSU"|"ReSukiSU(34943)") echo $((30700 + git_version)) ;;
               "Official") echo $((20000 + git_version)) ;;
               "Next") echo $((30000 + git_version)) ;;
               *) return 1 ;;
@@ -324,15 +330,9 @@ jobs:
             if [ "${{ inputs.kernelsu_variant }}" == "Next" ]; then
               printf '%s' "$artifacts" | jq -r --arg name "$KSUM" \
                 '.artifacts[] | select(.name == $name) | "\(.name)\t\(.archive_download_url)"'
-            elif [ "${{ inputs.kernelsu_variant }}" == "ReSukiSU" ] || [ "${{ inputs.kernelsu_variant }}" == "ReSukiSU(34965)" ] || [ "${{ inputs.kernelsu_variant }}" == "ReSukiSU(34943)" ]; then
-              if [ "${{ inputs.kernelsu_variant }}" == "ReSukiSU(34965)" ]; then
-                # 多分支合集：Manager-release + Spoofed + Manager-debug
-                printf '%s' "$artifacts" | jq -r \
-                  '.artifacts[] | select(.name == "Manager-release" or .name == "Spoofed-Manager-release" or .name == "Manager-debug") | "\(.name)\t\(.archive_download_url)"'
-              else
-                printf '%s' "$artifacts" | jq -r \
-                  '.artifacts[] | select(.name == "Manager-release" or .name == "Spoofed-Manager-release") | "\(.name)\t\(.archive_download_url)"'
-              fi
+            elif [ "${{ inputs.kernelsu_variant }}" == "ReSukiSU" ] || [ "${{ inputs.kernelsu_variant }}" == "ReSukiSU(34943)" ]; then
+              printf '%s' "$artifacts" | jq -r \
+                '.artifacts[] | select(.name == "Manager-release" or .name == "Spoofed-Manager-release") | "\(.name)\t\(.archive_download_url)"'
             else
               printf '%s' "$artifacts" | jq -r --arg needle "$KSUM" \
                 '.artifacts[] | select((.name | ascii_downcase) | contains($needle)) | "\(.name)\t\(.archive_download_url)"'
@@ -400,7 +400,7 @@ jobs:
             # 【注意】ReSukiSU 的 build-manager.yml workflow 历史成功次数 = 0，CI 翻页永远拿不到任何构建
             #       同时 Release 中只有 v4.2.0-rc1（KSU=35061，4.2.x 时代，已移除 KPM 功能），
             #       35000+ 构建号不支持 KPM，所以不做 Release fallback，避免给用户无 KPM 的管理器。
-            #       对 ReSukiSU(34965/34943)，我们在上面的 case 分支里已经 exit 0 跳过；
+            #       对 ReSukiSU(34943)，我们在上面的 case 分支里已经从用户 fork 下载并 exit 0；
             #       对其它变体 CI 翻页拿不到就报错退出。
             echo "未获取到 KSU 版本小于等于 $TARGET_KSU_VERSION 的 Manager artifact 下载地址列表。"
             exit 1
@@ -418,20 +418,12 @@ jobs:
             done
           fi
 
-          if [ "${{ inputs.kernelsu_variant }}" == "ReSukiSU(34965)" ]; then
-            echo "ReSukiSU(34965): 保留多分支管理器合集（arm64-v8a / armeabi-v7a / x86_64 / universal / debug / Spoofed）..."
+          if [ "${{ inputs.kernelsu_variant }}" == "ReSukiSU" ] || [ "${{ inputs.kernelsu_variant }}" == "ReSukiSU(34943)" ]; then
+            echo "ReSukiSU: 保留管理器 APK 文件..."
             find manager-artifacts -type f -name "*.apk" -print || true
             APK_COUNT=$(find manager-artifacts -type f -name "*.apk" 2>/dev/null | wc -l || echo 0)
-            if [ "$APK_COUNT" -eq 0 ]; then
-              echo "警告: 未下载到任何管理器 APK（管理器下载流程失败，内核仍继续构建）"
-            fi
-          elif [ "${{ inputs.kernelsu_variant }}" == "ReSukiSU" ] || [ "${{ inputs.kernelsu_variant }}" == "ReSukiSU(34943)" ]; then
-            echo "仅保留 ReSukiSU arm64-v8a release 管理器..."
-            find manager-artifacts -type f -name "*.apk" ! -name "*-arm64-v8a-release.apk" ! -name "*Spoofed*" -delete 2>/dev/null || true
-            find manager-artifacts -type f -name "*debug*.apk" -delete 2>/dev/null || true
-            APK_COUNT=$(find manager-artifacts -type f -name "*-arm64-v8a-release.apk" 2>/dev/null | wc -l || echo 0)
             if [ "$APK_COUNT" -eq 0 ] && [ "${{ inputs.kernelsu_variant }}" != "ReSukiSU(34943)" ]; then
-              echo "警告: 未找到 ReSukiSU arm64-v8a release 管理器"
+              echo "警告: 未找到 ReSukiSU 管理器 APK"
             fi
             find manager-artifacts -type f -name "*.apk" -print || true
           fi
@@ -445,7 +437,7 @@ jobs:
         continue-on-error: true
         run: |
           case "${{ inputs.kernelsu_variant }}" in
-            "SukiSU(40726)"|"ReSukiSU(34965)"|"ReSukiSU(34943)")
+            "SukiSU(40726)"|"ReSukiSU(34943)")
               echo "下载 ${{ inputs.kernelsu_variant }} 对应的 SUSFS 模块..."
               echo "SUSFS_NAME=release-1.5.2+_4163b1a" >> $GITHUB_ENV
               BUILD_ID=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
