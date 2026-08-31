@@ -4,6 +4,7 @@ on:
   schedule:
     - cron: '0 8 */3 * *'  # 每 3 天 UTC 8:00
   workflow_dispatch:
+    inputs: {}
   push:
     branches: [main]
     paths:

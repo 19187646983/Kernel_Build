@@ -66,6 +66,7 @@ jobs:
           
       - name: Update SHA file in sha branch
         if: steps.compare.outputs.new_commit == 'true'
+        continue-on-error: true
         run: |
 
           git checkout sha 2>/dev/null || git checkout --orphan sha
