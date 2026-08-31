@@ -84,12 +84,16 @@ jobs:
           cp -r data/. web/data/
 
       - name: Ensure minimum Pages content exists
-        run: |
-          # 确保 web/ 目录下至少有可访问的文件，否则 Pages deployment 会报错
-          cd "$GITHUB_WORKSPACE/web"
-          if [ ! -f index.html ]; then
-            cat > index.html <<'HTMLEOF'
-<!doctype html>
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const path = require('path');
+            const web = path.join(process.env.GITHUB_WORKSPACE, 'web');
+            fs.mkdirSync(web, { recursive: true });
+            const idx = path.join(web, 'index.html');
+            if (!fs.existsSync(idx)) {
+              fs.writeFileSync(idx, `<!doctype html>
 <html lang="zh-CN">
 <head>
 <meta charset="utf-8">
@@ -100,35 +104,30 @@ body { font-family: -apple-system,Segoe UI,Helvetica,Arial,sans-serif; max-width
 h1 { border-bottom: 2px solid #3b82f6; padding-bottom: 10px; }
 h2 { margin-top: 30px; }
 .card { background:#f8fafc; border:1px solid #e2e8f0; border-radius:10px; padding: 14px 18px; margin: 12px 0; }
-.k { color: #1d4ed8; font-weight:600; }
-.v { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
 </style>
 </head>
 <body>
-<h1>🧠 Kernel Build · GKI 内核版本映射</h1>
-<p>自动拉取的 AOSP GKI 内核版本与 os_patch_level 的映射，支持 Android 12/13/14/15/16。</p>
+<h1>Kernel Build · GKI 内核版本映射</h1>
+<p>自动拉取的 AOSP GKI 内核版本与 os_patch_level 映射，Android 12/13/14/15/16。</p>
 <div id="app">加载中...</div>
 <script>
-fetch('data/android16/6.12.json').then(r=>r.json()).then(()=>document.getElementById('app').innerHTML='✅ 数据加载成功，请在 JSON 目录浏览完整文件。').catch(()=>document.getElementById('app').innerHTML='⚠️  未找到 data/，请检查 Actions 运行日志。');
+fetch('data/android16/6.12.json').then(r=>r.json()).then(()=>document.getElementById('app').innerHTML='✅ 数据加载成功，请浏览 JSON 目录。').catch(()=>document.getElementById('app').innerHTML='⚠️ 未找到 data/，请检查 Actions 日志。');
 </script>
-<h2>📁 数据文件目录</h2>
-<div class="card">
-  <ul class="v">
-    <li><a href="data/android12/5.10.json">android12/5.10.json</a></li>
-    <li><a href="data/android13/5.15.json">android13/5.15.json</a></li>
-    <li><a href="data/android14/6.1.json">android14/6.1.json</a></li>
-    <li><a href="data/android15/6.6.json">android15/6.6.json</a></li>
-    <li><a href="data/android16/6.12.json">android16/6.12.json</a></li>
-    <li><a href="data/announcement.json">announcement.json</a></li>
-  </ul>
-</div>
+<h2>数据文件目录</h2>
+<div class="card"><ul>
+<li><a href="data/android12/5.10.json">android12/5.10.json</a></li>
+<li><a href="data/android13/5.15.json">android13/5.15.json</a></li>
+<li><a href="data/android14/6.1.json">android14/6.1.json</a></li>
+<li><a href="data/android15/6.6.json">android15/6.6.json</a></li>
+<li><a href="data/android16/6.12.json">android16/6.12.json</a></li>
+<li><a href="data/announcement.json">announcement.json</a></li>
+</ul></div>
 </body>
-</html>
-HTMLEOF
-            echo "✅ 已生成 Pages 首页 index.html"
-          else
-            echo "ℹ  已存在 index.html，跳过生成"
-          fi
+</html>`);
+              core.info('✅ 已生成 Pages 首页 index.html');
+            } else {
+              core.info('ℹ 已存在 index.html，跳过生成');
+            }
 
       # 构建前端资源（webpack 打包 JS/SCSS → dist/），若无 package.json 则跳过
       - uses: actions/setup-node@v4
