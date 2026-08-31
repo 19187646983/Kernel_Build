@@ -5,7 +5,7 @@ on:
     - cron: '0 8 */3 * *'  # 每 3 天 UTC 8:00
   workflow_dispatch:
   push:
-    branches: [dev]
+    branches: [main]
     paths:
       - 'data/**'
       - 'web/**'
@@ -33,10 +33,16 @@ jobs:
           python-version: '3.12'
 
       - name: Run incremental update
-        working-directory: scripts
         run: |
           # Exit 0 = data changed, 2 = no changes, 1 = real error
-          python update_data.py && exit_code=0 || exit_code=$?
+          SCRIPT_DIR="$GITHUB_WORKSPACE/scripts"
+          if [ -f "$SCRIPT_DIR/update_data.py" ]; then
+            cd "$SCRIPT_DIR"
+            python update_data.py && exit_code=0 || exit_code=$?
+          else
+            echo "⚠  未找到 scripts/update_data.py，跳过增量更新（本次不更新内核版本数据）"
+            exit_code=2
+          fi
           if [ $exit_code -eq 1 ]; then
             echo "::error::update_data.py failed with an error"
             exit 1
@@ -58,7 +64,6 @@ jobs:
           fi
 
   deploy-pages:
-    if: ${{ github.repository == 'zzh20188/GKI_KernelSU_SUSFS' }}
     needs: update-data
     runs-on: ubuntu-latest
     environment:
@@ -67,22 +72,76 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
-          ref: dev
+          ref: main
 
       - name: Pull latest data
-        run: git pull origin dev
+        run: git pull origin main
 
-      - name: Copy data to web directory
-        run: cp -r data/ web/data/
+      - name: Prepare web/data directory
+        run: |
+          mkdir -p web/data
+          cp -r data/. web/data/
 
-      # 构建前端资源（webpack 打包 JS/SCSS → dist/）
+      - name: Ensure minimum Pages content exists
+        run: |
+          # 确保 web/ 目录下至少有可访问的文件，否则 Pages deployment 会报错
+          cd "$GITHUB_WORKSPACE/web"
+          if [ ! -f index.html ]; then
+            cat > index.html <<'HTMLEOF'
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>Kernel Build 数据页</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+body { font-family: -apple-system,Segoe UI,Helvetica,Arial,sans-serif; max-width: 960px; margin: 40px auto; padding: 0 20px; color:#222; }
+h1 { border-bottom: 2px solid #3b82f6; padding-bottom: 10px; }
+h2 { margin-top: 30px; }
+.card { background:#f8fafc; border:1px solid #e2e8f0; border-radius:10px; padding: 14px 18px; margin: 12px 0; }
+.k { color: #1d4ed8; font-weight:600; }
+.v { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+</style>
+</head>
+<body>
+<h1>🧠 Kernel Build · GKI 内核版本映射</h1>
+<p>自动拉取的 AOSP GKI 内核版本与 os_patch_level 的映射，支持 Android 12/13/14/15/16。</p>
+<div id="app">加载中...</div>
+<script>
+fetch('data/android16/6.12.json').then(r=>r.json()).then(()=>document.getElementById('app').innerHTML='✅ 数据加载成功，请在 JSON 目录浏览完整文件。').catch(()=>document.getElementById('app').innerHTML='⚠️  未找到 data/，请检查 Actions 运行日志。');
+</script>
+<h2>📁 数据文件目录</h2>
+<div class="card">
+  <ul class="v">
+    <li><a href="data/android12/5.10.json">android12/5.10.json</a></li>
+    <li><a href="data/android13/5.15.json">android13/5.15.json</a></li>
+    <li><a href="data/android14/6.1.json">android14/6.1.json</a></li>
+    <li><a href="data/android15/6.6.json">android15/6.6.json</a></li>
+    <li><a href="data/android16/6.12.json">android16/6.12.json</a></li>
+    <li><a href="data/announcement.json">announcement.json</a></li>
+  </ul>
+</div>
+</body>
+</html>
+HTMLEOF
+            echo "✅ 已生成 Pages 首页 index.html"
+          else
+            echo "ℹ  已存在 index.html，跳过生成"
+          fi
+
+      # 构建前端资源（webpack 打包 JS/SCSS → dist/），若无 package.json 则跳过
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
 
-      - name: Build web assets
+      - name: Build web assets (如果存在 package.json)
         working-directory: web
-        run: npm ci && npx webpack --mode production
+        run: |
+          if [ -f package.json ]; then
+            npm ci && npx webpack --mode production
+          else
+            echo "ℹ  web/package.json 不存在，跳过前端构建（直接使用静态 HTML）"
+          fi
 
       - name: Setup Pages
         uses: actions/configure-pages@v5
