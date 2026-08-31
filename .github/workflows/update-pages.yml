@@ -2,7 +2,7 @@ name: Update Data & Deploy Pages
 
 on:
   schedule:
-    - cron: '0 8 */3 * *'  # 每 3 天 UTC 8:00
+    - cron: '0 8 */3 * *'
   workflow_dispatch:
     inputs: {}
   push:
@@ -11,6 +11,7 @@ on:
       - 'data/**'
       - 'web/**'
       - 'scripts/**'
+      - '.github/workflows/update-pages.yml'
 
 permissions:
   contents: write
@@ -27,25 +28,29 @@ jobs:
     outputs:
       data-changed: ${{ steps.commit.outputs.changed }}
     steps:
-      - uses: actions/checkout@v7
+      - name: Checkout
+        uses: actions/checkout@v7
 
-      - uses: actions/setup-python@v5
+      - name: Setup Python
+        uses: actions/setup-python@v5
         with:
           python-version: '3.12'
 
       - name: Run incremental update
         run: |
-          # Exit 0 = data changed, 2 = no changes, 1 = real error
+          set +e
           SCRIPT_DIR="$GITHUB_WORKSPACE/scripts"
           if [ -f "$SCRIPT_DIR/update_data.py" ]; then
             cd "$SCRIPT_DIR"
-            python update_data.py && exit_code=0 || exit_code=$?
+            python update_data.py
+            ec=$?
           else
-            echo "⚠  未找到 scripts/update_data.py，跳过增量更新（本次不更新内核版本数据）"
-            exit_code=2
+            echo "⚠  未找到 scripts/update_data.py，跳过增量更新"
+            ec=2
           fi
-          if [ $exit_code -eq 1 ]; then
-            echo "::error::update_data.py failed with an error"
+          set -e
+          if [ "$ec" = "1" ]; then
+            echo "::error::update_data.py failed"
             exit 1
           fi
 
@@ -54,14 +59,15 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add data/
+          git add data/ 2>/dev/null || true
           if git diff --cached --quiet; then
             echo "changed=false" >> "$GITHUB_OUTPUT"
-            echo "No data changes to commit."
+            echo "No data changes."
           else
             git commit -m "chore: update GKI kernel version data"
             git push
             echo "changed=true" >> "$GITHUB_OUTPUT"
+            echo "Data updated."
           fi
 
   deploy-pages:
@@ -71,17 +77,23 @@ jobs:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
-      - uses: actions/checkout@v7
+      - name: Checkout
+        uses: actions/checkout@v7
         with:
           ref: main
 
       - name: Pull latest data
-        run: git pull origin main
+        run: git pull origin main || true
 
       - name: Prepare web/data directory
         run: |
           mkdir -p web/data
-          cp -r data/. web/data/
+          if [ -d data ]; then
+            cp -r data/. web/data/
+            echo "Copied data/* -> web/data/"
+          else
+            echo "⚠  data/ 目录不存在，跳过复制"
+          fi
 
       - name: Ensure minimum Pages content exists
         uses: actions/github-script@v7
@@ -92,8 +104,7 @@ jobs:
             const web = path.join(process.env.GITHUB_WORKSPACE, 'web');
             fs.mkdirSync(web, { recursive: true });
             const idx = path.join(web, 'index.html');
-            if (!fs.existsSync(idx)) {
-              fs.writeFileSync(idx, `<!doctype html>
+            const html = `<!doctype html>
 <html lang="zh-CN">
 <head>
 <meta charset="utf-8">
@@ -104,6 +115,7 @@ body { font-family: -apple-system,Segoe UI,Helvetica,Arial,sans-serif; max-width
 h1 { border-bottom: 2px solid #3b82f6; padding-bottom: 10px; }
 h2 { margin-top: 30px; }
 .card { background:#f8fafc; border:1px solid #e2e8f0; border-radius:10px; padding: 14px 18px; margin: 12px 0; }
+.v { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
 </style>
 </head>
 <body>
@@ -111,10 +123,10 @@ h2 { margin-top: 30px; }
 <p>自动拉取的 AOSP GKI 内核版本与 os_patch_level 映射，Android 12/13/14/15/16。</p>
 <div id="app">加载中...</div>
 <script>
-fetch('data/android16/6.12.json').then(r=>r.json()).then(()=>document.getElementById('app').innerHTML='✅ 数据加载成功，请浏览 JSON 目录。').catch(()=>document.getElementById('app').innerHTML='⚠️ 未找到 data/，请检查 Actions 日志。');
+fetch('data/android16/6.12.json').then(r=>r.json()).then(()=>document.getElementById('app').innerHTML='✅ 数据加载成功。').catch(()=>document.getElementById('app').innerHTML='⚠️ 未找到 data/，请检查 Actions 日志。');
 </script>
 <h2>数据文件目录</h2>
-<div class="card"><ul>
+<div class="card"><ul class="v">
 <li><a href="data/android12/5.10.json">android12/5.10.json</a></li>
 <li><a href="data/android13/5.15.json">android13/5.15.json</a></li>
 <li><a href="data/android14/6.1.json">android14/6.1.json</a></li>
@@ -123,24 +135,26 @@ fetch('data/android16/6.12.json').then(r=>r.json()).then(()=>document.getElement
 <li><a href="data/announcement.json">announcement.json</a></li>
 </ul></div>
 </body>
-</html>`);
-              core.info('✅ 已生成 Pages 首页 index.html');
+</html>`;
+            if (!fs.existsSync(idx)) {
+              fs.writeFileSync(idx, html);
+              core.info('✅ 已生成 index.html');
             } else {
-              core.info('ℹ 已存在 index.html，跳过生成');
+              core.info('ℹ 已存在 index.html');
             }
 
-      # 构建前端资源（webpack 打包 JS/SCSS → dist/），若无 package.json 则跳过
-      - uses: actions/setup-node@v4
+      - name: Setup Node
+        uses: actions/setup-node@v4
         with:
           node-version: '20'
 
-      - name: Build web assets (如果存在 package.json)
+      - name: Build web assets (if package.json exists)
         working-directory: web
         run: |
           if [ -f package.json ]; then
             npm ci && npx webpack --mode production
           else
-            echo "ℹ  web/package.json 不存在，跳过前端构建（直接使用静态 HTML）"
+            echo "ℹ  无 package.json，跳过前端构建"
           fi
 
       - name: Setup Pages
