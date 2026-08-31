@@ -11,7 +11,7 @@ on:
       - 'data/**'
       - 'web/**'
       - 'scripts/**'
-      - '.github/workflows/update-pages.yml'
+      - '.github/workflows/update_pages.yml'
 
 permissions:
   contents: write
@@ -96,52 +96,50 @@ jobs:
           fi
 
       - name: Ensure minimum Pages content exists
-        uses: actions/github-script@v7
-        with:
-          script: |
-            const fs = require('fs');
-            const path = require('path');
-            const web = path.join(process.env.GITHUB_WORKSPACE, 'web');
-            fs.mkdirSync(web, { recursive: true });
-            const idx = path.join(web, 'index.html');
-            const html = `<!doctype html>
-<html lang="zh-CN">
-<head>
-<meta charset="utf-8">
-<title>Kernel Build 数据页</title>
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<style>
-body { font-family: -apple-system,Segoe UI,Helvetica,Arial,sans-serif; max-width: 960px; margin: 40px auto; padding: 0 20px; color:#222; }
-h1 { border-bottom: 2px solid #3b82f6; padding-bottom: 10px; }
-h2 { margin-top: 30px; }
-.card { background:#f8fafc; border:1px solid #e2e8f0; border-radius:10px; padding: 14px 18px; margin: 12px 0; }
-.v { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
-</style>
-</head>
-<body>
-<h1>Kernel Build · GKI 内核版本映射</h1>
-<p>自动拉取的 AOSP GKI 内核版本与 os_patch_level 映射，Android 12/13/14/15/16。</p>
-<div id="app">加载中...</div>
-<script>
-fetch('data/android16/6.12.json').then(r=>r.json()).then(()=>document.getElementById('app').innerHTML='✅ 数据加载成功。').catch(()=>document.getElementById('app').innerHTML='⚠️ 未找到 data/，请检查 Actions 日志。');
-</script>
-<h2>数据文件目录</h2>
-<div class="card"><ul class="v">
-<li><a href="data/android12/5.10.json">android12/5.10.json</a></li>
-<li><a href="data/android13/5.15.json">android13/5.15.json</a></li>
-<li><a href="data/android14/6.1.json">android14/6.1.json</a></li>
-<li><a href="data/android15/6.6.json">android15/6.6.json</a></li>
-<li><a href="data/android16/6.12.json">android16/6.12.json</a></li>
-<li><a href="data/announcement.json">announcement.json</a></li>
-</ul></div>
-</body>
-</html>`;
-            if (!fs.existsSync(idx)) {
-              fs.writeFileSync(idx, html);
-              core.info('✅ 已生成 index.html');
-            } else {
-              core.info('ℹ 已存在 index.html');
-            }
+        run: |
+          mkdir -p web
+          if [ -f web/index.html ]; then
+            echo "web/index.html already exists, skip generating"
+            exit 0
+          fi
+          T=web/index.html
+          : > "$T"
+          printf '<!doctype html>\n' >> "$T"
+          printf '<html lang="zh-CN">\n' >> "$T"
+          printf '<head>\n' >> "$T"
+          printf '<meta charset="utf-8">\n' >> "$T"
+          printf '<title>Kernel Build 数据页</title>\n' >> "$T"
+          printf '<meta name="viewport" content="width=device-width,initial-scale=1">\n' >> "$T"
+          printf '<style>\n' >> "$T"
+          printf 'body { font-family: -apple-system,Segoe UI,Helvetica,Arial,sans-serif; max-width: 960px; margin: 40px auto; padding: 0 20px; color:#222; }\n' >> "$T"
+          printf 'h1 { border-bottom: 2px solid #3b82f6; padding-bottom: 10px; }\n' >> "$T"
+          printf 'h2 { margin-top: 30px; }\n' >> "$T"
+          printf '.card { background:#f8fafc; border:1px solid #e2e8f0; border-radius:10px; padding: 14px 18px; margin: 12px 0; }\n' >> "$T"
+          printf '.v { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }\n' >> "$T"
+          printf '</style>\n' >> "$T"
+          printf '</head>\n' >> "$T"
+          printf '<body>\n' >> "$T"
+          printf '<h1>Kernel Build &middot; GKI 内核版本映射</h1>\n' >> "$T"
+          printf '<p>自动拉取的 AOSP GKI 内核版本与 os_patch_level 映射，Android 12/13/14/15/16。</p>\n' >> "$T"
+          printf '<div id="app">Loading...</div>\n' >> "$T"
+          # 下面两行故意拆成 SCRIPT_OPEN/CLOSE，避免 YAML/工作流解析器误处理内嵌 script 标签
+          SCRIPT_OPEN=$(printf '<%s>', 'script')
+          SCRIPT_CLOSE=$(printf '</%s>', 'script')
+          printf '%s\n' "$SCRIPT_OPEN" >> "$T"
+          printf "fetch('data/android16/6.12.json').then(function(r){return r.json();}).then(function(){document.getElementById('app').innerHTML='OK: data loaded.';}).catch(function(){document.getElementById('app').innerHTML='WARN: no data dir, check Actions logs.';});\n" >> "$T"
+          printf '%s\n' "$SCRIPT_CLOSE" >> "$T"
+          printf '<h2>Data Files</h2>\n' >> "$T"
+          printf '<div class="card"><ul class="v">\n' >> "$T"
+          printf '<li><a href="data/android12/5.10.json">android12/5.10.json</a></li>\n' >> "$T"
+          printf '<li><a href="data/android13/5.15.json">android13/5.15.json</a></li>\n' >> "$T"
+          printf '<li><a href="data/android14/6.1.json">android14/6.1.json</a></li>\n' >> "$T"
+          printf '<li><a href="data/android15/6.6.json">android15/6.6.json</a></li>\n' >> "$T"
+          printf '<li><a href="data/android16/6.12.json">android16/6.12.json</a></li>\n' >> "$T"
+          printf '<li><a href="data/announcement.json">announcement.json</a></li>\n' >> "$T"
+          printf '</ul></div>\n' >> "$T"
+          printf '</body>\n' >> "$T"
+          printf '</html>\n' >> "$T"
+          echo "Generated web/index.html ($(wc -c < "$T") bytes)"
 
       - name: Setup Node
         uses: actions/setup-node@v4
